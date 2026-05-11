@@ -95,6 +95,10 @@ struct SlipLoggerView: View {
         context.insert(slip)
         if resetCleanDate {
             profile.cleanStartDate = timestamp
+            profile.lastAcknowledgedMilestoneID = nil
+            Task {
+                await NotificationService.shared.scheduleUpcomingMilestoneAlerts(cleanStart: profile.cleanStartDate)
+            }
         }
         try? context.save()
         dismiss()

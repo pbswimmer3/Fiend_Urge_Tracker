@@ -30,16 +30,43 @@ struct FiendApp: App {
 struct RootView: View {
     @Query private var profiles: [UserProfile]
     @Environment(\.modelContext) private var context
+    @Environment(\.scenePhase) private var scenePhase
+
+    @State private var pendingMilestone: Milestone?
 
     var body: some View {
         Group {
             if let profile = profiles.first, profile.hasCompletedOnboarding {
                 MainTabView(profile: profile)
+                    .fullScreenCover(item: $pendingMilestone) { milestone in
+                        MilestoneCelebrationView(
+                            milestone: milestone,
+                            habitName: profile.habitName
+                        ) {
+                            profile.lastAcknowledgedMilestoneID = milestone.id
+                            try? context.save()
+                            pendingMilestone = nil
+                        }
+                    }
+                    .onAppear { checkMilestone(profile: profile) }
+                    .onChange(of: scenePhase) { _, newPhase in
+                        if newPhase == .active { checkMilestone(profile: profile) }
+                    }
             } else {
                 OnboardingView()
             }
         }
         .tint(Theme.primary)
+    }
+
+    private func checkMilestone(profile: UserProfile) {
+        let elapsed = max(0, Date().timeIntervalSince(profile.cleanStartDate))
+        if let next = MilestoneService.milestoneToCelebrate(
+            elapsed: elapsed,
+            lastAcknowledgedID: profile.lastAcknowledgedMilestoneID
+        ) {
+            pendingMilestone = next
+        }
     }
 }
 

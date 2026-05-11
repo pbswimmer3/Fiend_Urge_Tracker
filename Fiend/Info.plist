@@ -36,6 +36,10 @@
 	<array>
 		<string>arm64</string>
 	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
@@ -50,7 +54,13 @@
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Fiend uses your location to map your urge triggers and identify high-risk environmental zones. Your location never leaves this device.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Fiend uses your location to map your urge triggers and identify high-risk environmental zones. Your location never leaves this device.</string>
+	<string>Fiend monitors danger-zone regions in the background to warn you when you enter a high-urge location. Your location never leaves this device.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>Fiend monitors danger-zone regions in the background to warn you when you enter a high-urge location. Your location never leaves this device.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Fiend uses the microphone for the voice-guided grounding exercise during high-intensity urges.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Fiend recognizes what you say during grounding exercises on-device so it can confirm you've completed each step.</string>
 	<key>UIUserInterfaceStyle</key>
 	<string>Automatic</string>
 </dict>

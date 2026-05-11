@@ -10,14 +10,21 @@ struct HomeView: View {
 
     @State private var showingLogger = false
     @State private var showingSlip = false
-    @State private var lastLogTimestamp: Date?
+    @State private var showingWhyEditor = false
+    @State private var showingCounselor = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: Theme.Space.l) {
-                    sobrietyHero
+                    SoberDaysBadge(cleanStartDate: profile.cleanStartDate)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    countdownHero
+                    MilestoneTrackerCard(cleanStartDate: profile.cleanStartDate)
                     oneTapLogger
+                    WhyCard(why: profile.whyImDoingThis) { showingWhyEditor = true }
+                    counselorEntry
                     todaySummary
                     recentActivity
                 }
@@ -37,54 +44,49 @@ struct HomeView: View {
                 }
             }
             .sheet(isPresented: $showingLogger) {
-                UrgeLoggerView(profile: profile) { created in
-                    lastLogTimestamp = created?.timestamp
+                UrgeLoggerView(profile: profile) { _ in
+                    updateWidgetSnapshot()
                 }
             }
             .sheet(isPresented: $showingSlip) {
                 SlipLoggerView(profile: profile)
+                    .onDisappear { updateWidgetSnapshot() }
             }
+            .sheet(isPresented: $showingWhyEditor) {
+                WhyEditor(profile: profile)
+            }
+            .onAppear { updateWidgetSnapshot() }
         }
     }
 
-    // MARK: - Sobriety hero
+    // MARK: - Sections
 
-    private var sobrietyHero: some View {
+    private var countdownHero: some View {
         Card {
-            VStack(alignment: .leading, spacing: Theme.Space.s) {
+            VStack(spacing: Theme.Space.m) {
                 Text("Clean from \(profile.habitName)")
                     .font(.subheadline)
                     .foregroundStyle(Theme.onSurfaceMuted)
-                TimelineView(.periodic(from: .now, by: 1)) { ctx in
-                    let parts = sobrietyParts(now: ctx.date)
-                    HStack(alignment: .firstTextBaseline, spacing: Theme.Space.m) {
-                        SobrietyPart(value: parts.days, label: "days")
-                        SobrietyPart(value: parts.hours, label: "hrs")
-                        SobrietyPart(value: parts.minutes, label: "min")
-                        SobrietyPart(value: parts.seconds, label: "sec")
-                    }
-                }
-                let cleanDays = AnalyticsEngine(urges: urges, slips: slips).cleanDaysInLast30()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                SoberCountdownView(
+                    cleanStartDate: profile.cleanStartDate,
+                    habitName: profile.habitName
+                )
+                .frame(maxWidth: .infinity)
+
+                let cleanDays = AnalyticsEngine(urges: urges, slips: slips)
+                    .cleanDaysInLast30(cleanStart: profile.cleanStartDate)
                 HStack(spacing: Theme.Space.s) {
                     Image(systemName: "calendar")
                     Text("\(cleanDays) of the last 30 days clean")
                 }
                 .font(.footnote)
                 .foregroundStyle(Theme.onSurfaceMuted)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
-
-    private func sobrietyParts(now: Date) -> (days: Int, hours: Int, minutes: Int, seconds: Int) {
-        let interval = max(0, now.timeIntervalSince(profile.cleanStartDate))
-        let days = Int(interval) / 86_400
-        let hours = (Int(interval) % 86_400) / 3_600
-        let minutes = (Int(interval) % 3_600) / 60
-        let seconds = Int(interval) % 60
-        return (days, hours, minutes, seconds)
-    }
-
-    // MARK: - One tap logger
 
     private var oneTapLogger: some View {
         Button {
@@ -105,7 +107,31 @@ struct HomeView: View {
         .shadow(color: Theme.primary.opacity(0.25), radius: 14, y: 6)
     }
 
-    // MARK: - Today summary
+    private var counselorEntry: some View {
+        NavigationLink {
+            CounselorView(profile: profile)
+        } label: {
+            Card {
+                HStack(spacing: Theme.Space.m) {
+                    Image(systemName: "sparkles")
+                        .font(.title2)
+                        .foregroundStyle(Theme.accent)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Today's counselor digest")
+                            .font(.headline)
+                            .foregroundStyle(Theme.onSurface)
+                        Text("A short read on what you might feel today.")
+                            .font(.caption)
+                            .foregroundStyle(Theme.onSurfaceMuted)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .foregroundStyle(Theme.onSurfaceMuted)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
 
     private var todaySummary: some View {
         let cal = Calendar.current
@@ -128,13 +154,18 @@ struct HomeView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // MARK: - Recent activity
-
     private var recentActivity: some View {
         Card {
             VStack(alignment: .leading, spacing: Theme.Space.s) {
-                Text("Recent")
-                    .font(.headline)
+                HStack {
+                    Text("Recent").font(.headline)
+                    Spacer()
+                    NavigationLink {
+                        HistoryView()
+                    } label: {
+                        Text("View all").font(.footnote.weight(.semibold))
+                    }
+                }
                 if urges.isEmpty {
                     Text("No urges logged yet. When you feel one coming on, tap the big button above.")
                         .font(.footnote)
@@ -143,6 +174,15 @@ struct HomeView: View {
                     let recent = Array(urges.prefix(5))
                     ForEach(recent, id: \.id) { urge in
                         UrgeRow(urge: urge)
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    context.delete(urge)
+                                    try? context.save()
+                                    updateWidgetSnapshot()
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
                         if urge.id != recent.last?.id {
                             Divider()
                         }
@@ -151,23 +191,75 @@ struct HomeView: View {
             }
         }
     }
+
+    // MARK: - Widget snapshot
+
+    private func updateWidgetSnapshot() {
+        let elapsed = max(0, Date().timeIntervalSince(profile.cleanStartDate))
+        let next = MilestoneService.nextMilestone(elapsed: elapsed)
+        let nextDate = next.map { profile.cleanStartDate.addingTimeInterval($0.interval) }
+        let engine = AnalyticsEngine(urges: urges, slips: slips)
+        let snapshot = WidgetSnapshot(
+            habitName: profile.habitName,
+            cleanStartDate: profile.cleanStartDate,
+            totalUrges: urges.count,
+            totalSlips: slips.count,
+            lastUrgeIntensity: urges.first?.intensity,
+            lastUrgeDate: urges.first?.timestamp,
+            cleanDaysInLast30: engine.cleanDaysInLast30(cleanStart: profile.cleanStartDate),
+            nextMilestoneLabel: next?.label,
+            nextMilestoneDate: nextDate,
+            motivation: profile.whyImDoingThis.isEmpty ? nil : profile.whyImDoingThis
+        )
+        WidgetBridge.write(snapshot)
+    }
 }
 
-private struct SobrietyPart: View {
-    let value: Int
-    let label: String
+// MARK: - Why editor
+
+struct WhyEditor: View {
+    @Bindable var profile: UserProfile
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
+
+    @State private var text: String = ""
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("\(value)")
-                .font(.system(size: 32, weight: .bold, design: .rounded))
-                .foregroundStyle(Theme.primary)
-                .contentTransition(.numericText())
-            Text(label)
-                .font(.caption2)
-                .foregroundStyle(Theme.onSurfaceMuted)
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: Theme.Space.m) {
+                    Text("The reason you started.")
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.onSurfaceMuted)
+                    TextEditor(text: $text)
+                        .frame(minHeight: 200)
+                        .padding(Theme.Space.s)
+                        .background(Theme.surfaceRaised)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.s))
+                }
+                .padding()
+            }
+            .background(Theme.surface.ignoresSafeArea())
+            .navigationTitle("Why")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        profile.whyImDoingThis = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        try? context.save()
+                        dismiss()
+                    }
+                }
+            }
+            .onAppear { text = profile.whyImDoingThis }
         }
     }
 }
+
+// MARK: - Urge row (kept here for reuse)
 
 struct UrgeRow: View {
     let urge: UrgeLog

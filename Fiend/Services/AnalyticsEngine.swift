@@ -99,12 +99,22 @@ struct AnalyticsEngine {
 
     // MARK: - Clean days out of last 30
 
-    func cleanDaysInLast30(reference: Date = Date()) -> Int {
-        let start = calendar.date(byAdding: .day, value: -30, to: calendar.startOfDay(for: reference)) ?? reference
-        let slipDays = Set(slips
-            .filter { $0.timestamp >= start }
-            .map { calendar.startOfDay(for: $0.timestamp) })
-        return 30 - slipDays.count
+    /// Counts completed days in the last 30 where the user was clean.
+    /// Pre-clean-start days and slip days don't count. Today is excluded
+    /// because it isn't a completed day yet — that's why a fresh install reads 0.
+    func cleanDaysInLast30(cleanStart: Date, reference: Date = Date()) -> Int {
+        let todayStart = calendar.startOfDay(for: reference)
+        let cleanStartDay = calendar.startOfDay(for: cleanStart)
+        let slipDays = Set(slips.map { calendar.startOfDay(for: $0.timestamp) })
+
+        var cleanDays = 0
+        for offset in 1...30 {
+            guard let day = calendar.date(byAdding: .day, value: -offset, to: todayStart) else { continue }
+            if day < cleanStartDay { continue }
+            if slipDays.contains(day) { continue }
+            cleanDays += 1
+        }
+        return cleanDays
     }
 
     // MARK: - Sober dividend

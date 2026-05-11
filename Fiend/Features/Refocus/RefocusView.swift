@@ -201,7 +201,7 @@ struct BreathingPacer: View {
     }
 }
 
-// MARK: - Grounding
+// MARK: - Grounding (voice-gated)
 
 struct GroundingExercise: View {
     private let prompts: [(Int, String, String)] = [
@@ -211,26 +211,94 @@ struct GroundingExercise: View {
         (2, "smell", "nose"),
         (1, "taste", "mouth")
     ]
+    @StateObject private var speech = SpeechService()
     @State private var index = 0
+    @State private var requestedPermission = false
+
+    private var currentPrompt: (Int, String, String) { prompts[index] }
+    private var requiredWords: Int { currentPrompt.0 }
+    private var canAdvance: Bool { speech.wordCount >= requiredWords }
+    private var isLast: Bool { index == prompts.count - 1 }
 
     var body: some View {
-        VStack(spacing: Theme.Space.l) {
-            let prompt = prompts[index]
-            Image(systemName: prompt.2)
-                .font(.system(size: 72, weight: .regular))
+        VStack(spacing: Theme.Space.m) {
+            Image(systemName: currentPrompt.2)
+                .font(.system(size: 64, weight: .regular))
                 .foregroundStyle(.white)
-            Text("Name \(prompt.0) things you can \(prompt.1)")
+
+            Text("Name \(requiredWords) things you can \(currentPrompt.1)")
                 .font(.title2.bold())
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, Theme.Space.l)
 
-            Button(index == prompts.count - 1 ? "Done" : "Next") {
-                if index < prompts.count - 1 { index += 1 }
+            VStack(spacing: Theme.Space.xs) {
+                Text(speech.transcript.isEmpty ? "Tap the mic and say them out loud." : speech.transcript)
+                    .font(.body)
+                    .foregroundStyle(.white.opacity(speech.transcript.isEmpty ? 0.6 : 1.0))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, Theme.Space.l)
+                    .frame(minHeight: 60)
+
+                Text("\(speech.wordCount) / \(requiredWords) words")
+                    .font(.caption)
+                    .foregroundStyle(canAdvance ? Theme.accent : .white.opacity(0.6))
             }
-            .buttonStyle(SoftButtonStyle())
-            .padding(.horizontal, Theme.Space.xl)
-            .disabled(index == prompts.count - 1)
+
+            HStack(spacing: Theme.Space.s) {
+                Button {
+                    if speech.isListening {
+                        speech.stop()
+                    } else {
+                        speech.start()
+                    }
+                } label: {
+                    Label(speech.isListening ? "Stop" : "Listen", systemImage: speech.isListening ? "stop.circle.fill" : "mic.circle.fill")
+                        .font(.title3.weight(.semibold))
+                        .padding(.horizontal, Theme.Space.m)
+                        .padding(.vertical, Theme.Space.s)
+                        .background(.white.opacity(speech.isListening ? 0.35 : 0.18))
+                        .clipShape(Capsule())
+                        .foregroundStyle(.white)
+                }
+
+                Button {
+                    speech.stop()
+                    if isLast {
+                        // Final prompt: parent's "I feel steadier" button completes the flow.
+                        // We just mark this one done — the user can tap that button.
+                    } else {
+                        index += 1
+                        speech.reset()
+                    }
+                } label: {
+                    Text(isLast ? "Done" : "Next")
+                        .font(.title3.weight(.semibold))
+                        .padding(.horizontal, Theme.Space.l)
+                        .padding(.vertical, Theme.Space.s)
+                        .background(canAdvance ? Theme.accent : Color.white.opacity(0.18))
+                        .clipShape(Capsule())
+                        .foregroundStyle(.white)
+                        .opacity(canAdvance ? 1 : 0.6)
+                }
+                .disabled(!canAdvance)
+                .animation(.easeInOut(duration: 0.2), value: canAdvance)
+            }
+
+            if let err = speech.lastError {
+                Text(err)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.8))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, Theme.Space.l)
+            }
         }
+        .task {
+            if !requestedPermission {
+                requestedPermission = true
+                await speech.requestAuthorization()
+            }
+        }
+        .onDisappear { speech.stop() }
     }
 }

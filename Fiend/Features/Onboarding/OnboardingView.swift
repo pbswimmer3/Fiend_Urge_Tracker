@@ -11,6 +11,10 @@ struct OnboardingView: View {
     @State private var acknowledgedDisclaimer: Bool = false
     @State private var hoursReclaimed: Double = 2
     @State private var dollarsReclaimed: Double = 20
+    @State private var whyText: String = ""
+    @State private var markHomeNow: Bool = false
+
+    private let totalSteps = 8
 
     var body: some View {
         VStack {
@@ -19,10 +23,11 @@ struct OnboardingView: View {
                 welcomePane.tag(0)
                 disclaimerPane.tag(1)
                 habitPane.tag(2)
-                startDatePane.tag(3)
-                dividendPane.tag(4)
-                locationPane.tag(5)
-                finishPane.tag(6)
+                whyPane.tag(3)
+                startDatePane.tag(4)
+                dividendPane.tag(5)
+                locationPane.tag(6)
+                finishPane.tag(7)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             .animation(.easeInOut, value: step)
@@ -35,7 +40,7 @@ struct OnboardingView: View {
 
     private var progressDots: some View {
         HStack(spacing: 6) {
-            ForEach(0..<7) { i in
+            ForEach(0..<totalSteps, id: \.self) { i in
                 Circle()
                     .fill(i == step ? Theme.primary : Theme.primary.opacity(0.2))
                     .frame(width: 8, height: 8)
@@ -89,6 +94,21 @@ struct OnboardingView: View {
         }
     }
 
+    private var whyPane: some View {
+        paneContainer {
+            VStack(alignment: .leading, spacing: Theme.Space.m) {
+                Text("Why are you doing this?").font(.title2.bold())
+                Text("On hard days the home screen will show this back to you. Be honest. You can edit it any time.")
+                    .foregroundStyle(Theme.onSurfaceMuted)
+                TextEditor(text: $whyText)
+                    .frame(minHeight: 140)
+                    .padding(Theme.Space.s)
+                    .background(Theme.surfaceRaised)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.s))
+            }
+        }
+    }
+
     private var startDatePane: some View {
         paneContainer {
             VStack(alignment: .leading, spacing: Theme.Space.m) {
@@ -123,7 +143,7 @@ struct OnboardingView: View {
         paneContainer {
             VStack(alignment: .leading, spacing: Theme.Space.m) {
                 Text("Optional: location").font(.title2.bold())
-                Text("Fiend can attach your coarse location to each urge so it can map your triggers and highlight high-risk environmental zones. Location never leaves your device.")
+                Text("Fiend can attach your coarse location to each urge so it can map your triggers and identify high-risk environmental zones. Location never leaves your device.")
                     .foregroundStyle(Theme.onSurfaceMuted)
                 Button {
                     locationService.requestAuthorization()
@@ -134,6 +154,18 @@ struct OnboardingView: View {
                 Text(locationStatusText)
                     .font(.footnote)
                     .foregroundStyle(Theme.onSurfaceMuted)
+
+                Toggle(isOn: $markHomeNow) {
+                    VStack(alignment: .leading) {
+                        Text("Mark my current spot as Home")
+                            .font(.subheadline.weight(.medium))
+                        Text("So if urges spike here, the app can call it out.")
+                            .font(.caption)
+                            .foregroundStyle(Theme.onSurfaceMuted)
+                    }
+                }
+                .tint(Theme.primary)
+                .disabled(![.authorizedAlways, .authorizedWhenInUse].contains(locationService.authorizationStatus))
             }
         }
     }
@@ -170,9 +202,9 @@ struct OnboardingView: View {
                 Button("Back") { step -= 1 }
                     .buttonStyle(SoftButtonStyle())
             }
-            Button(step == 6 ? "Start" : "Continue") {
-                if step == 6 {
-                    finish()
+            Button(step == totalSteps - 1 ? "Start" : "Continue") {
+                if step == totalSteps - 1 {
+                    Task { await finish() }
                 } else {
                     step += 1
                 }
@@ -200,7 +232,7 @@ struct OnboardingView: View {
         }
     }
 
-    private func finish() {
+    private func finish() async {
         let profile = UserProfile(
             habitName: habitName.trimmingCharacters(in: .whitespaces),
             cleanStartDate: cleanStartDate,
@@ -209,9 +241,23 @@ struct OnboardingView: View {
         profile.acknowledgedMedicalDisclaimer = acknowledgedDisclaimer
         profile.dailyHoursReclaimed = hoursReclaimed
         profile.dailyDollarsReclaimed = dollarsReclaimed
+        profile.whyImDoingThis = whyText.trimmingCharacters(in: .whitespacesAndNewlines)
         profile.locationPermissionGranted = [.authorizedAlways, .authorizedWhenInUse]
             .contains(locationService.authorizationStatus)
+
+        if markHomeNow, profile.locationPermissionGranted {
+            if let loc = await LocationService.shared.oneShotLocation() {
+                profile.homeLatitude = loc.coordinate.latitude
+                profile.homeLongitude = loc.coordinate.longitude
+                profile.homeName = "Home"
+            }
+        }
+
         context.insert(profile)
         try? context.save()
+
+        // Schedule milestone notifications proactively.
+        await NotificationService.shared.requestAuthorization()
+        await NotificationService.shared.scheduleUpcomingMilestoneAlerts(cleanStart: profile.cleanStartDate)
     }
 }
