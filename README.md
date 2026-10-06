@@ -6,17 +6,18 @@ A privacy-first iOS app for tracking urges, sobriety time, and recovery patterns
 
 - **Xcode 15** or newer (SwiftData + iOS 17 APIs)
 - **iOS 17.0+** deployment target
-- A free Apple ID works for side-loading the main app (7-day signing)
-- A paid Apple Developer account ($99/yr) is required for the **widget extension** and **App Group** entitlement — those features can be skipped on a free account
+- A paid Apple Developer account ($99/yr). The main target signs with `Fiend/Fiend.entitlements` (App Group), which free Personal Teams cannot sign; to try it on a free Apple ID, clear `CODE_SIGN_ENTITLEMENTS` on the Fiend target first (widgets then won't get data)
 
 ## Quick start — put it on your iPhone
+
+Full guide, including TestFlight + Xcode Cloud so the app stays installed without a Mac: [`docs/install-on-iphone.md`](docs/install-on-iphone.md).
 
 1. `open Fiend.xcodeproj`
 2. Target → **Signing & Capabilities** → set your Team and a unique `PRODUCT_BUNDLE_IDENTIFIER` (e.g. `com.yourname.fiend`).
 3. Plug in your iPhone, pick it as the destination, hit **⌘R**.
-4. First launch: **Settings → General → VPN & Device Management → trust your Apple ID**.
+4. If iOS shows "Untrusted Developer": **Settings → General → VPN & Device Management → trust your Apple ID**.
 
-The app and all features except home-screen widgets will work on a free Apple ID. The widget extension needs to be added manually — see "Enabling widgets" below.
+The widget extension needs to be added manually — see "Enabling widgets" below.
 
 ## What's in v1.1
 
@@ -100,7 +101,7 @@ Widget extensions require their own target. To keep the project file portable ac
 5. Add the **App Groups** capability to both `Fiend` and `FiendWidgets` targets, with the same group id `group.com.fiendapp.fiend` (or change both to your own).
 6. Build and run on device. Long-press the home screen → "+" → search "Fiend."
 
-If you only want a free-signing personal build, skip steps 1–6 entirely. The main app works without widgets.
+Widgets are optional; the main app works without them.
 
 ## Path to App Store
 
@@ -116,7 +117,7 @@ If you only want a free-signing personal build, skip steps 1–6 entirely. The m
 | iCloud sync | flip `cloudKitDatabase:` on the SwiftData ModelConfiguration; add entitlement |
 | LLM counselor as subscription | swap `KeychainService.get` for a server-issued token; rest of the architecture stays the same |
 | Accessibility pass | run Xcode Accessibility Inspector; tap targets are already ≥44pt |
-| TestFlight | archive → distribute → invite |
+| TestFlight | archive → distribute → invite; see [`docs/install-on-iphone.md`](docs/install-on-iphone.md) |
 
 ## Feature map → spec
 
